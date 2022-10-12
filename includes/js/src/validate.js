@@ -2,7 +2,11 @@ import { setStatus } from './status';
 
 
 export default function validate( form, options = {} ) {
-	const scope = form;
+	const {
+		target,
+		scope = form,
+		...remainingOptions
+	} = options;
 
 	const schema = { ...form.wpcf7?.schema };
 
@@ -10,13 +14,19 @@ export default function validate( form, options = {} ) {
 		return;
 	}
 
-	// Event target is not a wpcf7 form control.
-	if ( ! options.target?.closest( '.wpcf7-form-control-wrap[data-name]' ) ) {
-		return;
-	}
+	if ( undefined !== target ) {
+		if ( ! form.contains( target ) ) {
+			return;
+		}
 
-	if ( options.target?.closest( '.novalidate' ) ) {
-		return;
+		// Event target is not a wpcf7 form control.
+		if ( ! target.closest( '.wpcf7-form-control-wrap[data-name]' ) ) {
+			return;
+		}
+
+		if ( target.closest( '.novalidate' ) ) {
+			return;
+		}
 	}
 
 	const formData = new FormData();
@@ -68,7 +78,7 @@ export default function validate( form, options = {} ) {
 			wrap.setAttribute( 'data-under-validation', '1' );
 
 			if (
-				wrap.dataset.name === options.target.name.replace( /\[.*\]$/, '' )
+				wrap.dataset.name === target.name?.replace( /\[.*\]$/, '' )
 			) {
 				break;
 			}
@@ -86,12 +96,14 @@ export default function validate( form, options = {} ) {
 			if ( undefined !== swv ) {
 				const result = swv.validate( schema, formData, options );
 
-				for ( const [ field, { error } ] of result ) {
+				for ( const [ field, { error, validInputs } ] of result ) {
 					removeValidationError( form, field );
 
 					if ( undefined !== error ) {
-						setValidationError( form, field, error );
+						setValidationError( form, field, error, { scope } );
 					}
+
+					updateReflection( form, field, validInputs ?? [] );
 				}
 			}
 		} )
@@ -107,7 +119,12 @@ export default function validate( form, options = {} ) {
 }
 
 
-export const setValidationError = ( form, fieldName, message ) => {
+export const setValidationError = ( form, fieldName, message, options ) => {
+	const {
+		scope = form,
+		...remainingOptions
+	} = options ?? {};
+
 	const errorId = `${ form.wpcf7?.unitTag }-ve-${ fieldName }`
 		.replaceAll( /[^0-9a-z_-]+/ig, '' );
 
@@ -138,7 +155,7 @@ export const setValidationError = ( form, fieldName, message ) => {
 	};
 
 	const setVisualValidationError = () => {
-		form.querySelectorAll(
+		scope.querySelectorAll(
 			`.wpcf7-form-control-wrap[data-name="${ fieldName }"]`
 		).forEach( wrap => {
 			if (
@@ -208,6 +225,24 @@ export const removeValidationError = ( form, fieldName ) => {
 			if ( typeof control.setCustomValidity === 'function' ) {
 				control.setCustomValidity( '' );
 			}
+		} );
+	} );
+};
+
+
+export const updateReflection = ( form, field, validInputs ) => {
+	form.querySelectorAll(
+		`[data-reflection-of="${ field }"]`
+	).forEach( reflection => {
+		reflection.innerHTML = '';
+
+		validInputs.forEach( input => {
+			const output = document.createElement( 'output' );
+
+			output.setAttribute( 'name', field );
+			output.insertAdjacentText( 'beforeend', input );
+
+			reflection.appendChild( output );
 		} );
 	} );
 };
